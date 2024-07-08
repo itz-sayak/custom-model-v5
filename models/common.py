@@ -1084,15 +1084,25 @@ class Classify(nn.Module):
 
 #=======================================================================#
 
-class C4(C3):
-    # C3 module with SPP()
-    def __init__(self, c1, c2, k=(5, 9, 13), n=1, shortcut=True, g=1, e=0.5):
-        """Initializes a C3 module with SPP layer for advanced spatial feature extraction, given channel sizes, kernel
-        sizes, shortcut, group, and expansion ratio.
+class C4(nn.Module):
+    # Standard Bottleneck with 5 convolutions
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
+        """Initializes C4 module with options for channel count, bottleneck repetition, shortcut usage, group
+        convolutions, and expansion.
         """
-        super().__init__(c1, c2, n, shortcut, g, e)
-        c_ = int(c2 * e)
-        self.m = SPP(c_, c_, k)
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(c_, c_, 3, 1, 1)  # Third convolution layer
+        self.cv4 = Conv(c_, c_, 3, 1, 1)  # Fourth convolution layer
+        self.cv5 = Conv(2 * c_, c2, 1)    # Fifth convolution layer
+        self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+
+    def forward(self, x):
+        y1 = self.cv3(self.cv1(x))
+        y2 = self.cv4(self.cv2(x))
+        return self.cv5(torch.cat((y1, y2), dim=1))
 
 class C5(C3):
     # C3 module with SPPF()
