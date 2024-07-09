@@ -1,4 +1,4 @@
-# D 🚀, AGPL-3.0 license
+# Detection Model 🚀, AGPL-3.0 license
 
 # Parameters
 nc: 80 # number of classes
@@ -9,7 +9,7 @@ anchors:
   - [30, 61, 62, 45, 59, 119] # P4/16
   - [116, 90, 156, 198, 373, 326] # P5/32
 
-# YOLOv5 v6.0 backbone
+# Model backbone
 backbone:
   # [from, number, module, args]
   [
@@ -25,7 +25,7 @@ backbone:
     [-1, 1, SPPF, [1024, 5]], # 9
   ]
 
-# YOLOv5 v6.0 BiFPN head
+# Model BiFPN head
 head: [
     [-1, 1, Conv, [512, 1, 1]],
     [-1, 1, nn.Upsample, [None, 2, "nearest"]],
