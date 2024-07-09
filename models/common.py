@@ -1098,7 +1098,7 @@ class C4(nn.Module):
         self.cv3 = Conv(c1, c_, 1, 1)
         self.cv4 = Conv(c1, c_, 1, 1)
         self.cv5 = Conv(4 * c_, c2, 1)  # optional act=FReLU(c2)
-        self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+        self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
 
 
 class C5(C3):
