@@ -1099,6 +1099,14 @@ class C4(nn.Module):
         self.cv4 = Conv(c1, c_, 1, 1)
         self.cv5 = Conv(4 * c_, c2, 1)  # optional act=FReLU(c2)
         self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+    
+    def forward(self, x):
+        """Forward pass through the CSP bottleneck with 5 convolutions."""
+        y1 = self.cv1(x)
+        y2 = self.cv2(x)
+        y3 = self.cv3(x)
+        y4 = self.cv4(x)
+        return self.cv5(torch.cat((self.m(y1), y2, y3, y4), 1))
 
 
 class C5(C3):
