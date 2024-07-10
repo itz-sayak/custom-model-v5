@@ -1084,43 +1084,61 @@ class Classify(nn.Module):
 
 #===================================================================================================================#
 class ChannelAttention(nn.Module):
-    """Channel-attention module."""
-
-    def __init__(self, channels: int) -> None:
-        """Initializes the class and sets the basic configurations and instance variables required."""
-        super().__init__()
-        self.pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = Conv(channels, channels, k=1, act=False)
-        self.act = nn.Sigmoid()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Applies forward pass using activation on convolutions of the input, optionally using batch normalization."""
-        return x * self.act(self.fc(self.pool(x)))
-
-class SpatialAttention(nn.Module):
-    """Spatial-attention module."""
-
-    def __init__(self, kernel_size=7):
-        """Initialize Spatial-attention module with kernel size argument."""
-        super().__init__()
-        assert kernel_size in {3, 7}, "kernel size must be 3 or 7"
-        padding = 3 if kernel_size == 7 else 1
-        self.cv1 = Conv(2, 1, kernel_size, padding=padding, act=False)
-        self.act = nn.Sigmoid()
+    def __init__(self, in_planes, ratio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        # self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.f1 = nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False)
+        self.relu = nn.ReLU()
+        self.f2 = nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        """Apply channel and spatial attention on input for feature recalibration."""
-        return x * self.act(self.cv1(torch.cat([torch.mean(x, 1, keepdim=True), torch.max(x, 1, keepdim=True)[0]], 1)))
+        # 全局平均池化—>MLP两层卷积
+        avg_out = self.f2(self.relu(self.f1(self.avg_pool(x))))
+        # 全局最大池化—>MLP两层卷积
+        # max_out = self.f2(self.relu(self.f1(self.max_pool(x))))
+        out = self.sigmoid(avg_out)
+        return out
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        padding = 3 if kernel_size == 7 else 1
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # 基于channel的全局平均池化(channel=1)
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        # 基于channel的全局最大池化(channel=1)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        # channel拼接(channel=2)
+        x = torch.cat([avg_out, max_out], dim=1)
+        # channel=1
+        x = self.conv(x)
+        return self.sigmoid(x)
+
 
 class CBAM(nn.Module):
-    """Convolutional Block Attention Module."""
-
-    def __init__(self, c1, kernel_size=7):
-        """Initialize CBAM with given input channel (c1) and kernel size."""
-        super().__init__()
-        self.channel_attention = ChannelAttention(c1)
+    # ch_in, ch_out, shortcut, groups, expansion, ratio, kernel_size
+    def __init__(self, c1, c2, kernel_size=3, shortcut=True, g=1, e=0.5, ratio=16):
+        super(CBAM, self).__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c_, c2, 3, 1, g=g)
+        self.add = shortcut and c1 == c2
+        # 加入CBAM模块
+        self.channel_attention = ChannelAttention(c2, ratio)
         self.spatial_attention = SpatialAttention(kernel_size)
 
     def forward(self, x):
-        """Applies the forward pass through C1 module."""
-        return self.spatial_attention(self.channel_attention(x))
+        # 考虑加入CBAM模块的位置：bottleneck模块刚开始时、bottleneck模块中shortcut之前，这里选择在shortcut之前
+        x2 = self.cv2(self.cv1(x))  # x和x2的channel数相同
+        # 在bottleneck模块中shortcut之前加入CBAM模块
+        out = self.channel_attention(x2) * x2
+        # print('outchannels:{}'.format(out.shape))
+        out = self.spatial_attention(out) * out
+        return x + out if self.add else out
