@@ -505,7 +505,7 @@ def check_file(file, suffix=""):
         assert len(files) == 1, f"Multiple files match '{file}', specify exact path: {files}"  # assert unique
         return files[0]  # return file
 
-
+'''
 def check_font(font=FONT, progress=False):
     """Ensures specified font exists or downloads it from Ultralytics assets, optionally displaying progress."""
     font = Path(font)
@@ -514,7 +514,30 @@ def check_font(font=FONT, progress=False):
         url = f"https://ultralytics.com/assets/{font.name}"
         LOGGER.info(f"Downloading {url} to {file}...")
         torch.hub.download_url_to_file(url, str(file), progress=progress)
+'''
 
+def check_font(font=FONT, progress=False):
+    """
+    Find font locally or download to user's configuration directory if it does not already exist.
+
+    Args:
+        font (str): Path or name of font.
+
+    Returns:
+        file (Path): Resolved font file path.
+    """
+    from matplotlib import font_manager
+
+    # Check USER_CONFIG_DIR
+    name = Path(font).name
+    file = CONFIG_DIR / name
+    if file.exists():
+        return file
+
+    # Check system fonts
+    matches = [s for s in font_manager.findSystemFonts() if font in s]
+    if any(matches):
+        return matches[0]
 
 def check_dataset(data, autodownload=True):
     """Validates and/or auto-downloads a dataset, returning its configuration as a dictionary."""
