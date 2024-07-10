@@ -1082,64 +1082,45 @@ class Classify(nn.Module):
             x = torch.cat(x, 1)
         return self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
 
-#=======================================================================#
+#===================================================================================================================#
 class ChannelAttention(nn.Module):
-    def __init__(self, in_planes, ratio=16):
-        super(ChannelAttention, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
-        self.f1 = nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False)
-        self.relu = nn.ReLU()
-        self.f2 = nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
-        self.sigmoid = nn.Sigmoid()
+    """Channel-attention module."""
 
-    def forward(self, x):
-        # Global Average Pooling -> MLP with two convolutional layers
-        avg_out = self.f2(self.relu(self.f1(self.avg_pool(x))))
-        # Global Max Pooling -> MLP with two convolutional layers.
-        max_out = self.f2(self.relu(self.f1(self.max_pool(x))))
-        out = self.sigmoid(avg_out + max_out)
-        return out
+    def __init__(self, channels: int) -> None:
+        """Initializes the class and sets the basic configurations and instance variables required."""
+        super().__init__()
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = Conv(channels, channels, k=1, act=False)
+        self.act = nn.Sigmoid()
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Applies forward pass using activation on convolutions of the input, optionally using batch normalization."""
+        return x * self.act(self.fc(self.pool(x)))
 
 class SpatialAttention(nn.Module):
+    """Spatial-attention module."""
+
     def __init__(self, kernel_size=7):
-        super(SpatialAttention, self).__init__()
-        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        """Initialize Spatial-attention module with kernel size argument."""
+        super().__init__()
+        assert kernel_size in {3, 7}, "kernel size must be 3 or 7"
         padding = 3 if kernel_size == 7 else 1
-        self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
-        self.sigmoid = nn.Sigmoid()
+        self.cv1 = Conv(2, 1, kernel_size, padding=padding, act=False)
+        self.act = nn.Sigmoid()
 
     def forward(self, x):
-        # Global Average Pooling based on channel (channel=1).
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        # Global Max Pooling based on channel (channel=1).
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        # Channel concatenation (channel=2)
-        x = torch.cat([avg_out, max_out], dim=1)
-        # channel=1
-        x = self.conv(x)
-        return self.sigmoid(x)
+        """Apply channel and spatial attention on input for feature recalibration."""
+        return x * self.act(self.cv1(torch.cat([torch.mean(x, 1, keepdim=True), torch.max(x, 1, keepdim=True)[0]], 1)))
 
+class CBAM(nn.Module):
+    """Convolutional Block Attention Module."""
 
-class CBAMBottleneck(nn.Module):
-    # ch_in, ch_out, shortcut, groups, expansion, ratio, kernel_size
-    def __init__(self, c1, c2, kernel_size=3, shortcut=True, g=1, e=0.5, ratio=16):
-        super(CBAMBottleneck, self).__init__()
-        c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv(c_, c2, 3, 1, g=g)
-        self.add = shortcut and c1 == c2
-        # Integrate CBAM module
-        self.channel_attention = ChannelAttention(c2, ratio)
+    def __init__(self, c1, kernel_size=7):
+        """Initialize CBAM with given input channel (c1) and kernel size."""
+        super().__init__()
+        self.channel_attention = ChannelAttention(c1)
         self.spatial_attention = SpatialAttention(kernel_size)
 
     def forward(self, x):
-        # Consider adding the CBAM module at the position: just at the beginning of the bottleneck module, 
-        # before the shortcut in the bottleneck module.
-        x2 = self.cv2(self.cv1(x))  # x and x2 have the same number of channels
-        # Incorporate the CBAM module before the shortcut within the bottleneck module.
-        out = self.channel_attention(x2) * x2
-        # print('outchannels:{}'.format(out.shape))
-        out = self.spatial_attention(out) * out
-        return x + out if self.add else out
+        """Applies the forward pass through C1 module."""
+        return self.spatial_attention(self.channel_attention(x))
