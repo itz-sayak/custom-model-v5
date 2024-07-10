@@ -526,18 +526,31 @@ def check_font(font=FONT, progress=False):
     Returns:
         file (Path): Resolved font file path.
     """
-    from matplotlib import font_manager
-
     # Check USER_CONFIG_DIR
     name = Path(font).name
     file = CONFIG_DIR / name
     if file.exists():
+        LOGGER.info(f"Font {font} found in {CONFIG_DIR}.")
         return file
 
     # Check system fonts
     matches = [s for s in font_manager.findSystemFonts() if font in s]
-    if any(matches):
-        return matches[0]
+    if matches:
+        LOGGER.info(f"Font {font} found in system fonts.")
+        return Path(matches[0])
+
+    # Download font if not found locally or in system fonts
+    url = f"https://ultralytics.com/assets/{font.name}"
+    LOGGER.info(f"Downloading {url} to {file}...")
+    
+    try:
+        torch.hub.download_url_to_file(url, str(file), progress=progress)
+        LOGGER.info(f"Downloaded {font} successfully.")
+    except Exception as e:
+        LOGGER.error(f"Error downloading font from {url}: {e}")
+        raise RuntimeError(f"Failed to download the font file: {e}")
+    
+    return file
 
 def check_dataset(data, autodownload=True):
     """Validates and/or auto-downloads a dataset, returning its configuration as a dictionary."""
