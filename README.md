@@ -8,7 +8,7 @@ Run `pip install -r requirements.txt` in terminal.
 
 ### 3. Train the model
 
-Modify args in `train.py`. In HIC-Yolov5, some args are set as follows:
+Modify args in `train.py`. In custom-model-v5, some args are set as follows:
 
 * `--weights`: `yolov5s.pt`
 * `-cfg`: `models/our-model.yaml`
