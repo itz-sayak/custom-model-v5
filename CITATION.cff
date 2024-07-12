@@ -3,12 +3,12 @@ preferred-citation:
   type: software
   message: If you use this model, please cite it as below.
   authors:
-  - family-names: Jocher
-    given-names: Glenn
+  - family-names: Sayak
+    given-names: Dutta
     orcid: "https://orcid.org/0000-0001-5950-6979"
   title: "custom model for small and large object detection"
-  version: 7.0
+  version: 5.0
   doi: 10.5281/zenodo.3908559
-  date-released: 2020-5-29
+  date-released: 2020-7-12
   license: AGPL-3.0
   url: "https://github.com/itz-sayak/custom-model-v5"
