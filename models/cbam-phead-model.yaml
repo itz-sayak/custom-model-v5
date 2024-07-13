@@ -5,10 +5,10 @@ nc: 80  # number of classes
 depth_multiple: 0.67  # model depth multiple
 width_multiple: 0.75  # layer channel multiple
 anchors:
-  - [24,22, 88,20, 116,33]
-  - [101,49, 27,214, 202,60]
-  - [292,47, 296,66, 284,86]
-  - [305,110, 274,129, 253,179]
+  - [23,23, 87,21, 114,34]
+  - [28,177, 190,46, 130,76]
+  - [291,48, 293,65, 282,86]
+  - [279,113, 333,128, 250,180]
 
 # v6 backbone
 backbone:
