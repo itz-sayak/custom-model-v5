@@ -11,7 +11,16 @@ from tqdm import tqdm
 from utils import TryExcept
 from utils.general import LOGGER, TQDM_BAR_FORMAT, colorstr
 
-PREFIX = colorstr("AutoAnchor: ")
+PREFIX = colorstr("Optimising Anchor: ")
+
+def wh_iou(wh1, wh2, eps=1e-7):
+    """Calculates the Intersection over Union (IoU) for two sets of widths and heights; `wh1` and `wh2` should be nx2
+    and mx2 tensors.
+    """
+    wh1 = wh1[:, None]  # [N,1,2]
+    wh2 = wh2[None]  # [1,M,2]
+    inter = torch.min(wh1, wh2).prod(2)  # [N,M]
+    return inter / (wh1.prod(2) + wh2.prod(2) - inter + eps)  # iou = inter / (area1 + area2 - inter)
 
 
 def check_anchor_order(m):
@@ -45,14 +54,14 @@ def check_anchors(dataset, model, thr=4.0, imgsz=640):
     anchors = m.anchors.clone() * stride  # current anchors
     bpr, aat = metric(anchors.cpu().view(-1, 2))
     s = f"\n{PREFIX}{aat:.2f} anchors/target, {bpr:.3f} Best Possible Recall (BPR). "
-    if bpr > 0.98:  # threshold to recompute
+    if bpr > 1:  # threshold to recompute
         LOGGER.info(f"{s}Current anchors are a good fit to dataset ✅")
     else:
-        LOGGER.info(f"{s}Anchors are a poor fit to dataset ⚠️, attempting to improve...")
+        LOGGER.info(f"{s}Just another Attempt of optimising Anchor (already bpr@1.0000) ⚠️, attempting to improve...")
         na = m.anchors.numel() // 2  # number of anchors
-        anchors = kmean_anchors(dataset, n=na, img_size=imgsz, thr=thr, gen=1000, verbose=False)
+        anchors = kmean_anchors(dataset, n=na, img_size=imgsz, thr=thr, gen=50000, verbose=True)
         new_bpr = metric(anchors)[0]
-        if new_bpr > bpr:  # replace anchors
+        if new_bpr == bpr:  # replace anchors
             anchors = torch.tensor(anchors, device=m.anchors.device).type_as(m.anchors)
             m.anchors[:] = anchors.clone().view_as(m.anchors)
             check_anchor_order(m)  # must be in pixel-space (not grid-space)
@@ -88,9 +97,10 @@ def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen
 
     def metric(k, wh):  # compute metrics
         """Computes ratio metric, anchors above threshold, and best possible recall for YOLOv5 anchor evaluation."""
+        
         r = wh[:, None] / k[None]
-        x = torch.min(r, 1 / r).min(2)[0]  # ratio metric
-        # x = wh_iou(wh, torch.tensor(k))  # iou metric
+        # x = torch.min(r, 1 / r).min(2)[0]  # ratio metric
+        x = wh_iou(wh, torch.tensor(k))  # iou metric
         return x, x.max(1)[0]  # x, best_x
 
     def anchor_fitness(k):  # mutation fitness
@@ -129,7 +139,7 @@ def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen
     i = (wh0 < 3.0).any(1).sum()
     if i:
         LOGGER.info(f"{PREFIX}WARNING ⚠️ Extremely small objects found: {i} of {len(wh0)} labels are <3 pixels in size")
-    wh = wh0[(wh0 >= 2.0).any(1)].astype(np.float32)  # filter > 2 pixels
+    wh = wh0[(wh0 >= 1.0).any(1)].astype(np.float32)  # filter > 2 pixels
     # wh = wh * (npr.rand(wh.shape[0], 1) * 0.9 + 0.1)  # multiply by random scale 0-1
 
     # Kmeans init
@@ -137,7 +147,7 @@ def kmean_anchors(dataset="./data/coco128.yaml", n=9, img_size=640, thr=4.0, gen
         LOGGER.info(f"{PREFIX}Running kmeans for {n} anchors on {len(wh)} points...")
         assert n <= len(wh)  # apply overdetermined constraint
         s = wh.std(0)  # sigmas for whitening
-        k = kmeans(wh / s, n, iter=30)[0] * s  # points
+        k = kmeans(wh / s, n, iter=1000)[0] * s  # points
         assert n == len(k)  # kmeans may return fewer points than requested if wh is insufficient or too similar
     except Exception:
         LOGGER.warning(f"{PREFIX}WARNING ⚠️ switching strategies from kmeans to random init")
