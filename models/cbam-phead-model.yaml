@@ -1,16 +1,16 @@
-# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+# cbam-phead, GPL-3.0 license
 
 # Parameters
 nc: 80  # number of classes
-depth_multiple: 0.33  # model depth multiple
-width_multiple: 0.50  # layer channel multiple
+depth_multiple: 0.67  # model depth multiple
+width_multiple: 0.75  # layer channel multiple
 anchors:
-  - [119, 29, 188, 20, 173, 30]
-  - [24, 22, 88, 20, 113, 36]
-  - [278, 47, 294, 66, 283, 87]
-  - [254, 124, 310, 117, 258, 180]
+  - [24,22, 88,20, 116,33]
+  - [101,49, 27,214, 202,60]
+  - [292,47, 296,66, 284,86]
+  - [305,110, 274,129, 253,179]
 
-# YOLOv5 v6.0 backbone
+# v6 backbone
 backbone:
   # [from, number, module, args]
   [[-1, 1, Conv, [64, 6, 2, 2]],  # 0-P1/2
@@ -26,7 +26,7 @@ backbone:
    [-1, 1, SPPF, [1024, 5]],  # 10
   ]
 
-# YOLOv5 v6.0 head
+# v6 head
 head:
   [[-1, 1, Conv, [512, 1, 1]],
    [-1, 1, nn.Upsample, [None, 2, 'nearest']],
