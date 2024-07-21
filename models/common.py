@@ -1082,7 +1082,8 @@ class Classify(nn.Module):
             x = torch.cat(x, 1)
         return self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
 
-#===================================================================================================================#
+#==============================================================================================================================#
+'''
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, ratio=16):
         super(ChannelAttention, self).__init__()
@@ -1142,3 +1143,98 @@ class CBAM(nn.Module):
         # print('outchannels:{}'.format(out.shape))
         out = self.spatial_attention(out) * out
         return x + out if self.add else out
+'''
+class ChannelAttention(nn.Module):
+    """
+    Channel Attention Module:
+    This module is designed to provide channel-wise attention. It uses global average pooling to reduce the input 
+    feature map's spatial dimensions to a single value per channel, and then passes it through a Multi-Layer 
+    Perceptron (MLP) implemented with two convolutional layers. The output is passed through a sigmoid activation 
+    function to get attention weights.
+    """
+    def __init__(self, in_planes, ratio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        # self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.f1 = nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False)
+        self.relu = nn.ReLU()
+        self.f2 = nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        """
+        Forward pass of the Channel Attention Module:
+        - Global average pooling -> MLP with two convolutional layers
+        """
+        avg_out = self.f2(self.relu(self.f1(self.avg_pool(x))))
+        # Global max pooling -> MLP with two convolutional layers
+        # max_out = self.f2(self.relu(self.f1(self.max_pool(x))))
+        out = self.sigmoid(avg_out)
+        return out
+
+
+class SpatialAttention(nn.Module):
+    """
+    Spatial Attention Module:
+    This module is designed to provide spatial attention. It uses global average pooling and global max pooling 
+    along the channel axis to get two 2D maps. These maps are concatenated along the channel dimension and passed 
+    through a convolutional layer followed by a sigmoid activation function to get spatial attention weights.
+    """
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        padding = 3 if kernel_size == 7 else 1
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        """
+        Forward pass of the Spatial Attention Module:
+        - Channel-wise global average pooling (channel=1)
+        - Channel-wise global max pooling (channel=1)
+        - Concatenate along the channel dimension (channel=2)
+        - Convolution to reduce channel dimension to 1
+        """
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.conv(x)
+        return self.sigmoid(x)
+
+
+class CBAM(nn.Module):
+    """
+    Convolutional Block Attention Module (CBAM):
+    This class integrates both channel and spatial attention mechanisms. It first reduces the input channels using 
+    a convolutional layer (`cv1`), processes them, and then applies another convolutional layer (`cv2`) to get the 
+    same number of channels as the input. The CBAM module is applied before the shortcut connection. It involves 
+    multiplying the input with the attention weights from the channel attention module and then the spatial attention 
+    module. The final output is either the shortcut connection added to the attention-modulated input or just the 
+    attention-modulated input, depending on the configuration.
+    """
+    def __init__(self, c1, c2, kernel_size=3, shortcut=True, g=1, e=0.5, ratio=16):
+        super(CBAM, self).__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c_, c2, 3, 1, g=g)
+        self.add = shortcut and c1 == c2
+        # Add CBAM module
+        self.channel_attention = ChannelAttention(c2, ratio)
+        self.spatial_attention = SpatialAttention(kernel_size)
+
+    def forward(self, x):
+        """
+        Forward pass of the CBAM:
+        - Consider where to add the CBAM module: at the beginning of the bottleneck module or before the shortcut 
+          in the bottleneck module. Here, it is chosen to add before the shortcut.
+        - Process input through convolutional layers `cv1` and `cv2`
+        - Apply channel attention followed by spatial attention
+        - Add shortcut connection if configured
+        """
+        x2 = self.cv2(self.cv1(x))  # x and x2 have the same number of channels
+        # Add CBAM module before the shortcut in the bottleneck module
+        out = self.channel_attention(x2) * x2
+        # print('outchannels:{}'.format(out.shape))
+        out = self.spatial_attention(out) * out
+        return x + out if self.add else out
+
